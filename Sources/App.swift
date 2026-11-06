@@ -73,11 +73,11 @@ final class Displays {
     init() {
         rescan()
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.rescan()
+            self?.rescan(rebind: true)
             // A freshly plugged monitor's DDC service can register a moment after the screen appears.
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 guard let self else { return }
-                self.rescan()
+                self.rescan(rebind: true)
                 self.monitors.filter { $0.responded == nil || $0 === self.selected }.forEach { $0.refresh() }
             }
         }
@@ -85,10 +85,14 @@ final class Displays {
 
     // Rebuilt on every panel open and display change, so replugged monitors get fresh IOAVService
     // handles; a Monitor object (and its cached capabilities) survives while its display stays online.
-    func rescan() {
+    func rescan(rebind: Bool = false) {
         var ids = [CGDirectDisplayID](repeating: 0, count: 16), count: UInt32 = 0
         CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count)
         let external = ids.prefix(Int(count)).filter { CGDisplayIsBuiltin($0) == 0 }
+        // Opening the menu must not replace an in-use DDC handle with a fresh one:
+        // an older refresh task could still be reading from that same physical monitor.
+        if !rebind, external.count == monitors.count,
+           zip(external, monitors).allSatisfy({ $0 == $1.id }) { return }
         let services = DDC.externalDisplays()
 
         var pairs: [(id: CGDirectDisplayID, service: Int, score: Int)] = []
@@ -116,7 +120,11 @@ final class Displays {
             let name = shared ? "\(base) (\(baseNames[...i].filter { $0 == base }.count))" : base
             let m = monitors.first { $0.id == id } ?? Monitor(id: id, legacyProfilesKey: shared ? nil : "profiles.\(base)")
             m.name = name
-            m.ddc = match[id].map { services[$0].ddc }
+            // Reuse a healthy service until topology actually changes. Creating a new
+            // IOAVService on every panel open allows concurrent reads to interleave.
+            if rebind || m.ddc == nil {
+                m.ddc = match[id].map { services[$0].ddc }
+            }
             return m
         }
     }
@@ -143,6 +151,10 @@ final class Monitor: Identifiable {
         didSet { UserDefaults.standard.set(try? JSONEncoder().encode(profiles), forKey: profilesKey) }
     }
     var volumeBeforeMute = 30
+    // Keep the last successfully read values, but expose sustained read failures to UI.
+    var readFailures = 0
+    @ObservationIgnored private var refreshInFlight = false
+    @ObservationIgnored private var refreshQueued = false
 
     init(id: CGDirectDisplayID, legacyProfilesKey: String?) {
         self.id = id
@@ -155,22 +167,57 @@ final class Monitor: Identifiable {
     }
 
     func refresh(after delay: Double = 0) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [self] in
-            hdrSupported = HDR.supported(id)
-            hdr = HDR.enabled(id) ?? ((screen(id)?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1)
-            guard let ddc else { responded = false; return }
-            if responded == false { responded = nil }
-            let known = supported
-            Task.detached {
-                let caps = known ?? ddc.capabilities().map(DDC.supportedCodes).flatMap { $0.isEmpty ? nil : $0 }
-                var read: [VCP: (current: Int, max: Int)] = [:]
-                for code in VCP.allCases where caps?[code.rawValue] != nil || caps == nil {
-                    read[code] = ddc.read(code)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.refreshNow()
+        }
+    }
+
+    private func refreshNow() {
+        hdrSupported = HDR.supported(id)
+        hdr = HDR.enabled(id) ?? ((screen(id)?.maximumPotentialExtendedDynamicRangeColorComponentValue ?? 1) > 1)
+        guard let ddc else { responded = false; return }
+        // Coalesce refreshes from menu opens, display notifications and preset changes.
+        // Each monitor should have only ONE DDC read sequence in flight at any moment.
+        if refreshInFlight {
+            refreshQueued = true
+            return
+        }
+        refreshInFlight = true
+        let known = supported
+        Task.detached { [weak self, ddc, known] in
+            var read: [VCP: (current: Int, max: Int)] = [:]
+            // Probe the known-good VCP brightness code before asking for the much larger
+            // capabilities string. This also lets us keep useful partial results.
+            read[.brightness] = ddc.read(.brightness)
+            let caps = known ?? ddc.capabilities().map(DDC.supportedCodes).flatMap { $0.isEmpty ? nil : $0 }
+            for code in VCP.allCases where code != .brightness && (caps?[code.rawValue] != nil || caps == nil) {
+                read[code] = ddc.read(code)
+            }
+            let (values, maxes) = (read.mapValues(\.current), read.mapValues(\.max))
+            await MainActor.run {
+                guard let self else { return }
+                self.refreshInFlight = false
+                // Discard responses from an old IOAVService after a screen reconnect.
+                if self.ddc === ddc {
+                    if !values.isEmpty {
+                        self.supported = caps ?? self.supported
+                        self.values.merge(values) { _, latest in latest }
+                        self.maxes.merge(maxes) { _, latest in latest }
+                        self.responded = true
+                        self.readFailures = 0
+                    } else {
+                        self.readFailures += 1
+                        // Do not turn a previously healthy monitor into "unsupported"
+                        // after a single transient failure, or erase its last good data.
+                        if self.values.isEmpty {
+                            self.responded = self.readFailures >= 2 ? false : nil
+                        }
+                        if self.readFailures == 1 { self.refresh(after: 1) }
+                    }
                 }
-                let (values, maxes) = (read.mapValues(\.current), read.mapValues(\.max))
-                await MainActor.run {
-                    self.supported = caps; self.values = values; self.maxes = maxes
-                    self.responded = !values.isEmpty
+                if self.refreshQueued {
+                    self.refreshQueued = false
+                    self.refreshNow()
                 }
             }
         }
@@ -265,7 +312,12 @@ struct Panel: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
-            if let monitor = displays.selected { MonitorSection(monitor: monitor).id(monitor.id) }
+            if let monitor = displays.selected {
+                MonitorSection(monitor: monitor, retryDetection: {
+                    displays.rescan(rebind: true)
+                    displays.selected?.refresh()
+                }).id(monitor.id)
+            }
             // Not on the first open, so the first look stays uncluttered.
             if opens >= 2, !hintDismissed, !keys.enabled, displays.selected?.responded == true {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -319,6 +371,7 @@ private func name(_ table: [Int: String], _ v: Int) -> String { table[v] ?? Stri
 
 struct MonitorSection: View {
     let monitor: Monitor
+    let retryDetection: () -> Void
     @State private var showColor = false
 
     var body: some View {
@@ -326,16 +379,32 @@ struct MonitorSection: View {
             Label(monitor.name, systemImage: "display")
                 .font(.headline)
 
-            if monitor.ddc == nil || monitor.responded == false {
+            if monitor.ddc == nil {
                 hdrRow
-                Label("当前连接无法使用显示器硬件控制", systemImage: "slash.circle")
+                Label("未找到显示器的 DDC/CI 通信通道", systemImage: "slash.circle")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .help("当前连接无法传输 DDC/CI 指令，例如 DisplayLink 转接器或 M1 Mac mini 的 HDMI 接口。USB-C 或 DisplayPort 通常可以。")
+                Button("重新检测连接", action: retryDetection)
+                    .buttonStyle(.link)
+            } else if monitor.responded == false {
+                hdrRow
+                Label("暂时无法读取显示器硬件参数", systemImage: "exclamationmark.triangle")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Button("重试读取") { monitor.refresh() }
+                    .buttonStyle(.link)
             } else if monitor.values.isEmpty {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity)
             } else {
                 hdrRow
+                if monitor.readFailures >= 2 {
+                    Label("DDC/CI 读取异常，以下为上次成功读取的值", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("重试读取") { monitor.refresh() }
+                        .buttonStyle(.link)
+                }
+                VStack(alignment: .leading, spacing: 12) {
                 Group {
                     SliderRow(icon: "sun.max.fill", help: "亮度", monitor: monitor, code: .brightness)
                     SliderRow(icon: "circle.lefthalf.filled", help: "对比度", monitor: monitor, code: .contrast)
@@ -393,6 +462,10 @@ struct MonitorSection: View {
                     .padding(.top, 8)
                 }
                 .font(.callout)
+                }
+                // Stale settings remain visible for diagnosis, but must not be written
+                // to the hardware until a successful read confirms the connection.
+                .disabled(monitor.readFailures >= 2)
             }
         }
     }
