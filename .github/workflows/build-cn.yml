@@ -23,6 +23,13 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: 无硬件 DDC 帧解析测试
+        shell: bash
+        run: |
+          mkdir -p build
+          swiftc Sources/DDC.swift Tests/DDCProtocolTests.swift -o build/ddc-protocol-tests
+          ./build/ddc-protocol-tests
+
       - name: 编译 DMG 和 ZIP
         run: ./build.sh dmg
 
