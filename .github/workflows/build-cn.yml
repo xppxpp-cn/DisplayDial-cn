@@ -1,0 +1,54 @@
+name: 构建 DisplayDial 中文版
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: displaydial-cn-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: 编译与打包 Apple Silicon 应用
+    runs-on: macos-15
+    steps:
+      - name: 获取源码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 编译 DMG 和 ZIP
+        run: ./build.sh dmg
+
+      - name: 验证应用标识、签名及安装包
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="build/DisplayDial-CN.app"
+          PLIST="$APP/Contents/Info.plist"
+          plutil -lint "$PLIST"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$PLIST")" = "com.xppxpp.displaydialcn"
+          test "$(plutil -extract CFBundleExecutable raw -o - "$PLIST")" = "DisplayDialCN"
+          test "$(plutil -extract CFBundleDisplayName raw -o - "$PLIST")" = "DisplayDial 中文版"
+          test -x "$APP/Contents/MacOS/DisplayDialCN"
+          lipo -archs "$APP/Contents/MacOS/DisplayDialCN" | grep -qw arm64
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          hdiutil verify build/DisplayDial-CN.dmg
+          unzip -tq build/DisplayDial-CN.zip
+          shasum -a 256 build/DisplayDial-CN.dmg build/DisplayDial-CN.zip
+
+      - name: 上传可下载的中文版
+        uses: actions/upload-artifact@v4
+        with:
+          name: DisplayDial-CN-macOS-AppleSilicon
+          path: |
+            build/DisplayDial-CN.dmg
+            build/DisplayDial-CN.zip
+          if-no-files-found: error
+          retention-days: 30
