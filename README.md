@@ -2,6 +2,9 @@
 
 # DisplayDial: control your external monitor's brightness, volume and input from your Mac
 
+> **简体中文 Fork / Simplified Chinese edition:** 本仓库的中文版安装与使用方法请阅读 [README.zh-CN.md](README.zh-CN.md)。请从本 Fork 的 [GitHub Actions](https://github.com/xppxpp-cn/DisplayDial-cn/actions) 下载 `DisplayDial-CN.app`；下方原作者的下载按钮仍指向英文原版。
+
+
 **DisplayDial is a free, open-source macOS menu bar app that controls an external monitor's hardware settings (brightness, contrast, speaker volume, input source, picture modes, colour presets and RGB colour) directly from your Mac over DDC/CI.** It is native Swift/SwiftUI, has no dependencies, and the whole app is under 300 KB.
 
 <p align="center">
