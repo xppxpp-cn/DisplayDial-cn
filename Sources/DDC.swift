@@ -69,11 +69,38 @@ final class DDC: @unchecked Sendable {
         return score
     }
 
-    private func write(_ payload: [UInt8]) -> Bool {
+    // A complete MCCS request frame: message length, payload, then the checksum
+    // over 0x6E^address^message bytes, the same way m1ddc builds it
+    // (waydabber/m1ddc, sources/i2c.m).
+    static func frame(_ payload: [UInt8]) -> [UInt8] {
         var packet = [0x80 | UInt8(payload.count)] + payload
         packet.append(packet.reduce(0x6E ^ 0x51, ^))
-        return IOAVServiceWriteI2C(service, 0x37, 0x51, &packet, UInt32(packet.count)) == kIOReturnSuccess
+        return packet
     }
+
+    // The Get VCP Feature and Current Value request for a code.
+    static func vcpRequest(_ code: VCP) -> [UInt8] { frame([0x01, code.rawValue]) }
+
+    // Every request has to be written twice. A single IOAVServiceWriteI2C leaves the
+    // AVService's read buffer holding the previous transaction's bytes, so the reply
+    // that comes back is stale and fails validation (on a Dell U2720QM the reply then
+    // reads back as "6E 80 BE" followed by the old frame's tail). m1ddc sends every
+    // request twice for the same reason, and with two writes the monitor answers with
+    // a well-formed MCCS frame whose checksum matches.
+    @discardableResult
+    private func send(_ packet: [UInt8]) -> Bool {
+        var ok = false
+        for i in 0..<2 {
+            // m1ddc pauses DDC_WAIT (10 ms) between the two writes of a request.
+            if i > 0 { usleep(10_000) }
+            var tx = packet
+            let ret = IOAVServiceWriteI2C(service, 0x37, 0x51, &tx, UInt32(tx.count))
+            ok = (ret == kIOReturnSuccess) || ok
+        }
+        return ok
+    }
+
+    private func write(_ payload: [UInt8]) -> Bool { send(Self.frame(payload)) }
 
     // Pure parser, testable without a connected monitor. Validate the 11-byte
     // MCCS frame even though IOAVServiceReadI2C requests 12 bytes of transport data.
@@ -84,10 +111,16 @@ final class DDC: @unchecked Sendable {
         return (Int(reply[8]) << 8 | Int(reply[9]), Int(reply[6]) << 8 | Int(reply[7]))
     }
 
+    // Which of a pair of input sources to switch to: the one that isn't showing now.
+    static func toggleTarget(current: Int?, pair: [Int]) -> Int? {
+        guard let current, pair.count == 2 else { return nil }
+        return pair.first { $0 != current }
+    }
+
     func read(_ code: VCP) -> (current: Int, max: Int)? {
         queue.sync {
             for _ in 0..<4 {
-                guard write([0x01, code.rawValue]) else { continue }
+                guard send(Self.vcpRequest(code)) else { continue }
                 usleep(40_000)
                 // macOS IOAVServiceReadI2C expects 12 bytes for a Get VCP reply.
                 // The MCCS frame itself is 11 bytes; byte 12 is transport padding.
@@ -174,12 +207,9 @@ final class DDC: @unchecked Sendable {
         queue.async { [self] in
             lock.lock(); let latest = pending.removeValue(forKey: code); lock.unlock()
             guard let latest else { return }
-            // Monitors silently drop the odd DDC write; a second copy is cheap insurance.
-            var ok = false
-            for _ in 0..<2 {
-                ok = write([0x03, code.rawValue, UInt8(latest >> 8 & 0xFF), UInt8(latest & 0xFF)]) || ok
-                usleep(15_000)
-            }
+            // Monitors silently drop the odd DDC write; send() puts the frame on the
+            // wire twice, which is the cheap insurance this needs.
+            let ok = write([0x03, code.rawValue, UInt8(latest >> 8 & 0xFF), UInt8(latest & 0xFF)])
             record(ok)
         }
     }
