@@ -16,7 +16,7 @@ concurrency:
 jobs:
   macos:
     name: 编译与打包 Apple Silicon 应用
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - name: 获取源码
         uses: actions/checkout@v4
