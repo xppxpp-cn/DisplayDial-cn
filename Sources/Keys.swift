@@ -287,12 +287,12 @@ private struct Indicator: View {
                 if locked { Image(systemName: "lock.fill").font(.system(size: 11)) }
             }
             if locked {
-                Text("Brightness is locked while HDR is on").font(.caption).foregroundStyle(.secondary)
+                Text("HDR 开启时无法调整显示器亮度").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(locked ? "Brightness is locked while HDR is on" : "\(kind == .brightness ? "Brightness" : "Volume") \(Int(fraction * 100))%")
+        .accessibilityLabel(locked ? "HDR 开启时无法调整显示器亮度" : "\(kind == .brightness ? "亮度" : "音量") \(Int(fraction * 100))%")
     }
 }

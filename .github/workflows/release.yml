@@ -1,29 +1,45 @@
-# Push a version tag (git tag v1.2.3 && git push origin v1.2.3) to build and publish a release.
-name: Release
+# Fork-only releases; never modify upstream releases.
+name: 发布 DisplayDial 中文版
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["cn-v*"]
 
 permissions:
   contents: write
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # build.sh reads the version tag and commit count
+          fetch-depth: 0
 
-      - name: Build DMG and zip
+      - name: Build DMG and ZIP
         run: ./build.sh dmg
 
-      - name: Publish GitHub release
+      - name: Verify independent app identity and code signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="build/DisplayDial-CN.app"
+          PLIST="$APP/Contents/Info.plist"
+          plutil -lint "$PLIST"
+          test "$(plutil -extract CFBundleIdentifier raw -o - "$PLIST")" = "com.xppxpp.displaydialcn"
+          test "$(plutil -extract CFBundleExecutable raw -o - "$PLIST")" = "DisplayDialCN"
+          test "$(plutil -extract CFBundleDisplayName raw -o - "$PLIST")" = "DisplayDial 中文版"
+          lipo -archs "$APP/Contents/MacOS/DisplayDialCN" | grep -qw arm64
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          hdiutil verify build/DisplayDial-CN.dmg
+          unzip -tq build/DisplayDial-CN.zip
+
+      - name: Publish release to this fork only
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" build/DisplayDial.dmg build/DisplayDial.zip \
-            --title "DisplayDial ${GITHUB_REF_NAME#v}" \
-            --notes-file .github/release-notes.md \
+          gh release create "$GITHUB_REF_NAME" \
+            build/DisplayDial-CN.dmg build/DisplayDial-CN.zip \
+            --title "DisplayDial 中文版 ${GITHUB_REF_NAME}" \
+            --notes "简体中文界面、本地独立应用身份。适用于 Apple Silicon 与 macOS 14+；个人 ad-hoc 签名版本，未经 Apple 公证。" \
             --generate-notes

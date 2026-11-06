@@ -15,10 +15,10 @@ struct DisplayDialApp: App {
         NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
             guard event.window?.className == "NSStatusBarWindow", let view = event.window?.contentView else { return event }
             let menu = NSMenu()
-            menu.addItem(withTitle: "Settings…", action: #selector(SettingsWindow.open), keyEquivalent: "").target = settings
-            menu.addItem(withTitle: "About DisplayDial", action: #selector(SettingsWindow.about), keyEquivalent: "").target = settings
+            menu.addItem(withTitle: "设置…", action: #selector(SettingsWindow.open), keyEquivalent: "").target = settings
+            menu.addItem(withTitle: "关于 DisplayDial", action: #selector(SettingsWindow.about), keyEquivalent: "").target = settings
             menu.addItem(.separator())
-            menu.addItem(withTitle: "Quit DisplayDial", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "").target = NSApp
+            menu.addItem(withTitle: "退出 DisplayDial", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "").target = NSApp
             NSMenu.popUpContextMenu(menu, with: event, for: view)
             return nil
         }
@@ -32,7 +32,7 @@ struct DisplayDialApp: App {
             Panel(displays: displays, keys: keys, settings: settings)
         } label: {
             if keys.needsAccess {
-                Image(nsImage: dottedIcon).accessibilityLabel("DisplayDial needs Accessibility access")
+                Image(nsImage: dottedIcon).accessibilityLabel("DisplayDial 中文版需要辅助功能权限")
             } else {
                 Image(nsImage: menuBarIcon).accessibilityLabel("DisplayDial")
             }
@@ -255,11 +255,11 @@ struct Panel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             if displays.monitors.isEmpty {
-                Label("No external display connected", systemImage: "display.trianglebadge.exclamationmark")
+                Label("未连接外接显示器", systemImage: "display.trianglebadge.exclamationmark")
                     .foregroundStyle(.secondary)
             }
             if displays.monitors.count > 1 {
-                Picker("Monitor", selection: Binding(get: { displays.selected?.id ?? 0 }, set: { displays.selectedID = $0 })) {
+                Picker("显示器", selection: Binding(get: { displays.selected?.id ?? 0 }, set: { displays.selectedID = $0 })) {
                     ForEach(displays.monitors) { Text($0.name).tag($0.id) }
                 }
                 .pickerStyle(.segmented)
@@ -270,30 +270,30 @@ struct Panel: View {
             if opens >= 2, !hintDismissed, !keys.enabled, displays.selected?.responded == true {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "keyboard").foregroundStyle(.secondary)
-                    Text("Use your keyboard's brightness and volume keys on this monitor?")
+                    Text("用键盘的亮度与音量键控制这台显示器？")
                     Spacer(minLength: 0)
-                    Button("Set up") { settings.show(highlightKeys: true) }
+                    Button("设置") { settings.show(highlightKeys: true) }
                         .buttonStyle(.link)
                     Button { hintDismissed = true } label: { Image(systemName: "xmark") }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel("Dismiss")
+                        .accessibilityLabel("关闭提示")
                 }
                 .font(.callout)
             }
             Divider()
             HStack {
-                Button { settings.show() } label: { Label("Settings…", systemImage: "gearshape") }
+                Button { settings.show() } label: { Label("设置…", systemImage: "gearshape") }
                     .keyboardShortcut(",")
                 Spacer()
-                Button("Quit") { NSApp.terminate(nil) }
+                Button("退出") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
             }
             .font(.callout)
             VStack(spacing: 2) {
-                Text("Made with ♥ by Grab Connected Tech · [grabians.com](https://www.grabians.com/?utm_source=displaydial&utm_medium=app)")
-                Text("© 2026 Grab Connected Tech LLC · [MIT License](https://github.com/Grab-Connected-Tech/DisplayDial/blob/main/LICENSE)")
-                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev") · [Releases](https://github.com/Grab-Connected-Tech/DisplayDial/releases)")
+                Text("由 Grab Connected Tech 用 ♥ 打造 · [grabians.com](https://www.grabians.com/?utm_source=displaydial&utm_medium=app)")
+                Text("© 2026 Grab Connected Tech LLC · [MIT 开源许可](https://github.com/Grab-Connected-Tech/DisplayDial/blob/main/LICENSE)")
+                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev") · [发行版本](https://github.com/Grab-Connected-Tech/DisplayDial/releases)")
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -311,10 +311,10 @@ struct Panel: View {
 
 // MCCS names for VCP 0x60 / 0xDC / 0x14 values; 0x1B (USB-C) is Dell's.
 private let inputNames = [0x01: "VGA", 0x03: "DVI", 0x0F: "DP 1", 0x10: "DP 2", 0x11: "HDMI 1", 0x12: "HDMI 2", 0x1B: "USB-C"]
-private let modeNames = [0x00: "Standard", 0x01: "Productivity", 0x02: "Mixed", 0x03: "Movie", 0x04: "User",
-                         0x05: "Game", 0x06: "Sports", 0x07: "Professional"]
-private let presetNames = [0x01: "sRGB", 0x02: "Native", 0x03: "4000K", 0x04: "5000K", 0x05: "6500K", 0x06: "7500K",
-                           0x07: "8200K", 0x08: "9300K", 0x09: "10000K", 0x0A: "11500K", 0x0B: "User 1", 0x0C: "User 2", 0x0D: "User 3"]
+private let modeNames = [0x00: "标准", 0x01: "办公", 0x02: "混合", 0x03: "电影", 0x04: "用户自定义",
+                         0x05: "游戏", 0x06: "运动", 0x07: "专业"]
+private let presetNames = [0x01: "sRGB", 0x02: "原生", 0x03: "4000K", 0x04: "5000K", 0x05: "6500K", 0x06: "7500K",
+                           0x07: "8200K", 0x08: "9300K", 0x09: "10000K", 0x0A: "11500K", 0x0B: "用户 1", 0x0C: "用户 2", 0x0D: "用户 3"]
 private func name(_ table: [Int: String], _ v: Int) -> String { table[v] ?? String(format: "0x%02X", v) }
 
 struct MonitorSection: View {
@@ -328,41 +328,41 @@ struct MonitorSection: View {
 
             if monitor.ddc == nil || monitor.responded == false {
                 hdrRow
-                Label("No hardware controls on this connection", systemImage: "slash.circle")
+                Label("当前连接无法使用显示器硬件控制", systemImage: "slash.circle")
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .help("This connection doesn't pass DDC/CI, e.g. DisplayLink adapters or the M1 Mac mini's HDMI port. USB-C or DisplayPort usually does.")
+                    .help("当前连接无法传输 DDC/CI 指令，例如 DisplayLink 转接器或 M1 Mac mini 的 HDMI 接口。USB-C 或 DisplayPort 通常可以。")
             } else if monitor.values.isEmpty {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity)
             } else {
                 hdrRow
                 Group {
-                    SliderRow(icon: "sun.max.fill", help: "Brightness", monitor: monitor, code: .brightness)
-                    SliderRow(icon: "circle.lefthalf.filled", help: "Contrast", monitor: monitor, code: .contrast)
+                    SliderRow(icon: "sun.max.fill", help: "亮度", monitor: monitor, code: .brightness)
+                    SliderRow(icon: "circle.lefthalf.filled", help: "对比度", monitor: monitor, code: .contrast)
                 }
                 .disabled(monitor.hdr)
                 if monitor.supports(.volume) {
-                    SliderRow(icon: volumeIcon, help: (monitor.values[.volume] ?? 0) > 0 ? "Mute" : "Unmute",
+                    SliderRow(icon: volumeIcon, help: (monitor.values[.volume] ?? 0) > 0 ? "静音" : "取消静音",
                               monitor: monitor, code: .volume) { monitor.toggleMute() }
                 }
 
                 let inputs = monitor.options(.input, fallback: [0x0F, 0x11, 0x12, 0x1B])
-                Titled("Input") {
-                    Picker("Input", selection: Binding(get: { monitor.input ?? -1 }, set: { monitor.set(.input, $0) })) {
+                Titled("输入源") {
+                    Picker("输入源", selection: Binding(get: { monitor.input ?? -1 }, set: { monitor.set(.input, $0) })) {
                         ForEach(inputs, id: \.self) { Text(name(inputNames, $0)).tag($0) }
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
-                    .help("Switching to another input hides this Mac until you switch back on the monitor")
+                    .help("切换输入源后将看不到这台 Mac 的画面；请使用显示器实体按钮切回")
                 }
 
                 let modes = monitor.options(.presetMode, fallback: [])
                 let presets = monitor.options(.colorPreset, fallback: [])
                 if modes.count > 1 || presets.count > 1 || monitor.canRestoreColor {
-                    Titled("Picture") {
+                    Titled("画面设置") {
                         Group {
                             if modes.count > 1 {
-                                Picker("Mode", selection: Binding(get: { monitor.values[.presetMode] ?? -1 },
+                                Picker("画面模式", selection: Binding(get: { monitor.values[.presetMode] ?? -1 },
                                                                   set: { monitor.switchPicture(.presetMode, $0) })) {
                                     ForEach(modes, id: \.self) { Text(name(modeNames, $0)).tag($0) }
                                 }
@@ -370,7 +370,7 @@ struct MonitorSection: View {
                                 .labelsHidden()
                             }
                             if presets.count > 1 {
-                                Picker("Color preset", selection: Binding(get: { monitor.values[.colorPreset] ?? -1 },
+                                Picker("色彩预设", selection: Binding(get: { monitor.values[.colorPreset] ?? -1 },
                                                                           set: { monitor.switchPicture(.colorPreset, $0) })) {
                                     ForEach(presets, id: \.self) { Text(name(presetNames, $0)).tag($0) }
                                 }
@@ -382,13 +382,13 @@ struct MonitorSection: View {
                     }
                 }
 
-                Titled("My profiles") { ProfilesRow(monitor: monitor) }
+                Titled("我的配置方案") { ProfilesRow(monitor: monitor) }
 
-                DisclosureGroup("Color", isExpanded: $showColor) {
+                DisclosureGroup("RGB 色彩调节", isExpanded: $showColor) {
                     VStack(spacing: 8) {
-                        SliderRow(icon: "r.circle.fill", help: "Red", monitor: monitor, code: .redGain).tint(.red)
-                        SliderRow(icon: "g.circle.fill", help: "Green", monitor: monitor, code: .greenGain).tint(.green)
-                        SliderRow(icon: "b.circle.fill", help: "Blue", monitor: monitor, code: .blueGain).tint(.blue)
+                        SliderRow(icon: "r.circle.fill", help: "红色", monitor: monitor, code: .redGain).tint(.red)
+                        SliderRow(icon: "g.circle.fill", help: "绿色", monitor: monitor, code: .greenGain).tint(.green)
+                        SliderRow(icon: "b.circle.fill", help: "蓝色", monitor: monitor, code: .blueGain).tint(.blue)
                     }
                     .padding(.top, 8)
                 }
@@ -406,7 +406,7 @@ struct MonitorSection: View {
                     .foregroundStyle(.secondary)
                 Text("HDR")
                 Spacer()
-                Text(monitor.hdr ? "On" : monitor.hdrSupported ? "Off" : "Not supported")
+                Text(monitor.hdr ? "开启" : monitor.hdrSupported ? "关闭" : "不支持")
                     .foregroundStyle(.secondary)
                 if monitor.hdrSupported {
                     Toggle("HDR", isOn: Binding(get: { monitor.hdr }, set: { monitor.setHDR($0) }))
@@ -417,7 +417,7 @@ struct MonitorSection: View {
             }
             .font(.callout)
             if monitor.hdr {
-                Text("The monitor locks brightness, contrast and colour presets while HDR is on.")
+                Text("开启 HDR 后，显示器通常会锁定亮度、对比度和色彩预设。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -452,12 +452,12 @@ struct ProfilesRow: View {
     var body: some View {
         if naming {
             HStack(spacing: 6) {
-                TextField("Profile name", text: $newName)
+                TextField("配置名称", text: $newName)
                     .textFieldStyle(.roundedBorder)
                     .focused($focused)
                     .onSubmit(save)
                     .onExitCommand { naming = false }
-                Button("Save", action: save)
+                Button("保存", action: save)
                     .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty)
                     .keyboardShortcut(.defaultAction)
             }
@@ -470,21 +470,21 @@ struct ProfilesRow: View {
                         Button(p.name) { monitor.apply(p) }
                             .buttonStyle(.bordered)
                             .tint(monitor.isActive(p) ? .accentColor : nil)
-                            .help("Apply · right-click to update or delete")
+                            .help("点击应用配置；右键可更新或删除")
                             .contextMenu {
-                                Button("Update to Current Settings") { monitor.updateProfile(p) }
-                                Button("Delete", role: .destructive) { monitor.profiles.removeAll { $0.id == p.id } }
+                                Button("更新为当前设置") { monitor.updateProfile(p) }
+                                Button("删除", role: .destructive) { monitor.profiles.removeAll { $0.id == p.id } }
                             }
                     }
                     Button {
                         newName = ""
                         naming = true
                     } label: {
-                        if monitor.profiles.isEmpty { Label("Save current settings", systemImage: "plus") }
-                        else { Image(systemName: "plus").accessibilityLabel("New profile") }
+                        if monitor.profiles.isEmpty { Label("保存当前设置", systemImage: "plus") }
+                        else { Image(systemName: "plus").accessibilityLabel("新建配置方案") }
                     }
                     .buttonStyle(.bordered)
-                    .help("Save the current picture settings as a profile")
+                    .help("将当前画面设置保存为配置方案")
                 }
                 .buttonBorderShape(.capsule)
                 .controlSize(.small)
@@ -509,12 +509,12 @@ struct FactoryColorButton: View {
         Button {
             if armed { monitor.restoreFactoryColor(); armed = false } else { armed = true }
         } label: {
-            Label(armed ? "Click again to reset colours" : "Restore factory colours", systemImage: "arrow.counterclockwise")
+            Label(armed ? "再次点击以确认恢复出厂颜色" : "恢复出厂颜色", systemImage: "arrow.counterclockwise")
         }
         .buttonStyle(.borderless)
         .foregroundStyle(armed ? .red : .secondary)
         .font(.callout)
-        .help("Resets the colour preset and red, green and blue to the monitor's factory defaults. Save a profile first to keep your current colours.")
+        .help("恢复色彩预设与红、绿、蓝增益的出厂值。建议先保存当前配置方案。")
         .task(id: armed) {
             guard armed else { return }
             try? await Task.sleep(for: .seconds(4))

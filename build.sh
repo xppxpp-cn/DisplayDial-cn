@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Usage: ./build.sh            -> build/DisplayDial.app
+# Usage: ./build.sh            -> build/DisplayDial-CN.app
 #        ./build.sh install    -> also copies it to /Applications and launches it
 #        ./build.sh check      -> hardware self-check (DDC write round-trip)
 #        ./build.sh screenshots -> renders docs/panel-{light,dark}.png from the live monitor
@@ -22,18 +22,19 @@ if [[ $1 == screenshots ]]; then
     -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker build/screenshots-Info.plist
   exec build/screenshots
 fi
-APP=build/DisplayDial.app
+APP=build/DisplayDial-CN.app
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 rm -rf $APP && mkdir -p $APP/Contents/{MacOS,Resources}
 cp Resources/AppIcon.icns Resources/MenuBarIconTemplate.pdf $APP/Contents/Resources/
-swiftc -O -target arm64-apple-macos14.0 Sources/*.swift -o $APP/Contents/MacOS/DisplayDial
+swiftc -O -target arm64-apple-macos14.0 Sources/*.swift -o $APP/Contents/MacOS/DisplayDialCN
 cat > $APP/Contents/Info.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleName</key><string>DisplayDial</string>
-  <key>CFBundleIdentifier</key><string>local.displaydial</string>
-  <key>CFBundleExecutable</key><string>DisplayDial</string>
+  <key>CFBundleName</key><string>DisplayDial CN</string>
+  <key>CFBundleDisplayName</key><string>DisplayDial 中文版</string>
+  <key>CFBundleIdentifier</key><string>com.xppxpp.displaydialcn</string>
+  <key>CFBundleExecutable</key><string>DisplayDialCN</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
@@ -46,16 +47,16 @@ PLIST
 codesign --force -s - $APP
 echo "Built $APP $VERSION ($BUILD)"
 if [[ $1 == install ]]; then
-  pkill -x DisplayDial || true
-  rm -rf /Applications/DisplayDial.app && cp -R $APP /Applications/
-  open /Applications/DisplayDial.app
+  pkill -x DisplayDialCN || true
+  rm -rf /Applications/DisplayDial-CN.app && cp -R $APP /Applications/
+  open /Applications/DisplayDial-CN.app
   echo "Installed to /Applications"
 fi
 if [[ $1 == dmg ]]; then
-  STAGE=build/dmg && rm -rf $STAGE build/DisplayDial.dmg build/DisplayDial.zip && mkdir -p $STAGE
+  STAGE=build/dmg && rm -rf $STAGE build/DisplayDial-CN.dmg build/DisplayDial-CN.zip && mkdir -p $STAGE
   cp -R $APP $STAGE/ && ln -s /Applications $STAGE/Applications
-  hdiutil create -volname DisplayDial -srcfolder $STAGE -format UDZO -quiet build/DisplayDial.dmg
+  hdiutil create -volname "DisplayDial 中文版" -srcfolder $STAGE -format UDZO -quiet build/DisplayDial-CN.dmg
   rm -rf $STAGE
-  ditto -c -k --keepParent $APP build/DisplayDial.zip
-  echo "Created build/DisplayDial.dmg and build/DisplayDial.zip"
+  ditto -c -k --keepParent $APP build/DisplayDial-CN.zip
+  echo "Created build/DisplayDial-CN.dmg and build/DisplayDial-CN.zip"
 fi
