@@ -114,7 +114,7 @@ struct SettingsView: View {
                 LabeledContent("版本", value: version)
                 Link("DisplayDial GitHub 项目", destination: URL(string: "https://github.com/Grab-Connected-Tech/DisplayDial")!)
                 HStack {
-                    Button("检查更新") { Task { await checkForUpdates() } }
+                    Button("检查上游更新") { Task { await checkForUpdates() } }
                     if let updateStatus { Text(.init(updateStatus)).foregroundStyle(.secondary) }
                 }
             }
@@ -149,16 +149,16 @@ struct SettingsView: View {
 
     // DisplayDial's only network request, made only when this button is clicked.
     private func checkForUpdates() async {
-        updateStatus = "正在检查…"
+        updateStatus = "正在检查上游版本…"
         let url = URL(string: "https://api.github.com/repos/Grab-Connected-Tech/DisplayDial/releases/latest")!
         guard let (data, _) = try? await URLSession.shared.data(from: url),
               let tag = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["tag_name"] as? String else {
-            updateStatus = "无法检查更新"
+            updateStatus = "无法检查上游更新"
             return
         }
         let latest = String(tag.trimmingPrefix("v"))
         updateStatus = latest.compare(version, options: .numeric) == .orderedDescending
-            ? "发现新版本 \(latest) · [下载官方版本](https://github.com/Grab-Connected-Tech/DisplayDial/releases/latest)"
-            : "已是最新版本"
+            ? "上游发布了 \(latest) · [下载英文原版](https://github.com/Grab-Connected-Tech/DisplayDial/releases/latest)"
+            : "当前已与上游最新版本一致"
     }
 }
