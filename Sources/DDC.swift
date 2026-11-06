@@ -80,7 +80,10 @@ final class DDC: @unchecked Sendable {
             for _ in 0..<4 {
                 guard write([0x01, code.rawValue]) else { continue }
                 usleep(40_000)
-                var reply = [UInt8](repeating: 0, count: 11)
+                // macOS IOAVServiceReadI2C expects 12 bytes for a Get VCP reply.
+                // The MCCS frame itself is 11 bytes; byte 12 is transport padding.
+                // m1ddc uses the same 12-byte read on Apple Silicon.
+                var reply = [UInt8](repeating: 0, count: 12)
                 guard IOAVServiceReadI2C(service, 0x37, 0x51, &reply, UInt32(reply.count)) == kIOReturnSuccess,
                       reply[2] == 0x02, reply[3] == 0x00, reply[4] == code.rawValue,
                       reply[..<10].reduce(0x50, ^) == reply[10] else { usleep(20_000); continue }
