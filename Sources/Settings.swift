@@ -16,7 +16,7 @@ final class SettingsWindow: NSObject {
     func show(highlightKeys: Bool = false) {
         let window = window ?? NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: false)
         if self.window == nil {
-            window.title = "DisplayDial Settings"
+            window.title = "DisplayDial 中文版 · 设置"
             window.isReleasedWhenClosed = false
             self.window = window
         }
@@ -50,33 +50,33 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("General") {
-                Toggle("Launch at login", isOn: $launchAtLogin)
+            Section("常规") {
+                Toggle("登录时启动", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, on in
                         do { on ? try SMAppService.mainApp.register() : try SMAppService.mainApp.unregister() }
                         catch { launchAtLogin = SMAppService.mainApp.status == .enabled }
                     }
             }
 
-            Section("Keyboard") {
+            Section("键盘控制") {
                 VStack(alignment: .leading, spacing: 6) {
-                    Toggle("Control external monitors with keyboard keys", isOn: Binding(get: { keys.enabled }, set: { on in
+                    Toggle("使用键盘按键控制外接显示器", isOn: Binding(get: { keys.enabled }, set: { on in
                         if on, !keys.trusted { explaining = true } else { keys.enabled = on }
                         turnedOff = !on && keys.trusted
                     }))
                     if keys.enabled {
                         if keys.trusted {
-                            Label("Ready", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                            Label("已就绪", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                         } else {
                             HStack {
-                                Label("Needs Accessibility access", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                                Label("需要辅助功能权限", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                                 Spacer()
                                 // Prompting (not just opening the page) lists this exact build; ad-hoc builds each need their own entry.
-                                Button("Open System Settings") { keys.requestAccess() }
+                                Button("打开系统设置") { keys.requestAccess() }
                             }
                         }
                     } else if turnedOff {
-                        Text("You can also remove DisplayDial from Privacy & Security › Accessibility in System Settings.")
+                        Text("也可以在“系统设置 → 隐私与安全性 → 允许辅助应用程序控制电脑”中管理 DisplayDial 中文版的授权。")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -85,36 +85,36 @@ struct SettingsView: View {
                 .background(highlightKeys ? Color.accentColor.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 6))
 
                 Group {
-                    Picker("Brightness keys adjust", selection: $brightnessTarget) {
-                        Text("Screen under the pointer").tag("pointer")
-                        Text("Screen with the active window").tag("window")
-                        Text("All screens").tag("all")
+                    Picker("亮度键控制目标", selection: $brightnessTarget) {
+                        Text("鼠标指针所在的显示器").tag("pointer")
+                        Text("活动窗口所在的显示器").tag("window")
+                        Text("所有显示器").tag("all")
                     }
-                    Toggle("Volume keys adjust monitor speakers", isOn: $volumeKeys)
+                    Toggle("音量键控制显示器的音频输出", isOn: $volumeKeys)
                     let candidates = keys.speakerCandidates
                     if candidates.count > 1 {
-                        Picker("Monitor speakers in use", selection: $speakers) {
-                            Text("Automatic").tag("")
+                        Picker("当前使用的显示器音频设备", selection: $speakers) {
+                            Text("自动选择").tag("")
                             ForEach(candidates) { Text($0.name).tag($0.key) }
                         }
                         .disabled(!volumeKeys)
                     }
-                    Toggle("Show on-screen indicator", isOn: $indicator)
+                    Toggle("显示屏幕音量 / 亮度提示", isOn: $indicator)
                 }
                 .disabled(!keys.enabled)
 
                 if otherAppRunning {
-                    Label("Another monitor app is running and may also respond to these keys.", systemImage: "info.circle")
+                    Label("检测到其他显示器管理软件也在运行，可能同时响应这些按键。", systemImage: "info.circle")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            Section("About") {
-                LabeledContent("Version", value: version)
-                Link("DisplayDial on GitHub", destination: URL(string: "https://github.com/Grab-Connected-Tech/DisplayDial")!)
+            Section("关于") {
+                LabeledContent("版本", value: version)
+                Link("DisplayDial GitHub 项目", destination: URL(string: "https://github.com/Grab-Connected-Tech/DisplayDial")!)
                 HStack {
-                    Button("Check for Updates") { Task { await checkForUpdates() } }
+                    Button("检查更新") { Task { await checkForUpdates() } }
                     if let updateStatus { Text(.init(updateStatus)).foregroundStyle(.secondary) }
                 }
             }
@@ -127,14 +127,14 @@ struct SettingsView: View {
 
     private var explanation: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Let DisplayDial use your keyboard keys").font(.headline)
-            Text("To send your brightness and volume keys to your monitor, DisplayDial needs to catch those keys before macOS does. macOS calls this Accessibility access.")
-            Text("DisplayDial only listens for the brightness, volume and mute keys. It can't see anything you type, and it has no network access.")
+            Text("允许 DisplayDial 使用键盘媒体键").font(.headline)
+            Text("若要让键盘的亮度键和音量键控制外接显示器，DisplayDial 需要先于 macOS 接收这些媒体键，因此需要辅助功能权限。")
+            Text("DisplayDial 只监听亮度、音量及静音媒体键，不会读取你输入的文字。除手动检查更新外，不会主动访问网络。")
             HStack {
                 Spacer()
-                Button("Not now") { explaining = false }
+                Button("暂不开启") { explaining = false }
                     .keyboardShortcut(.cancelAction)
-                Button("Continue") {
+                Button("继续") {
                     explaining = false
                     keys.enabled = true
                     keys.requestAccess()
@@ -149,16 +149,16 @@ struct SettingsView: View {
 
     // DisplayDial's only network request, made only when this button is clicked.
     private func checkForUpdates() async {
-        updateStatus = "Checking…"
+        updateStatus = "正在检查…"
         let url = URL(string: "https://api.github.com/repos/Grab-Connected-Tech/DisplayDial/releases/latest")!
         guard let (data, _) = try? await URLSession.shared.data(from: url),
               let tag = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["tag_name"] as? String else {
-            updateStatus = "Couldn't check for updates"
+            updateStatus = "无法检查更新"
             return
         }
         let latest = String(tag.trimmingPrefix("v"))
         updateStatus = latest.compare(version, options: .numeric) == .orderedDescending
-            ? "Version \(latest) is available · [Download](https://github.com/Grab-Connected-Tech/DisplayDial/releases/latest)"
-            : "You're up to date"
+            ? "发现新版本 \(latest) · [下载官方版本](https://github.com/Grab-Connected-Tech/DisplayDial/releases/latest)"
+            : "已是最新版本"
     }
 }
