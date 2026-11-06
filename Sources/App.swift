@@ -9,7 +9,9 @@ struct DisplayDialApp: App {
     private let settings: SettingsWindow
 
     init() {
-        let displays = Displays(), keys = Keys(displays: displays), settings = SettingsWindow(keys: keys)
+        let displays = Displays(), keys = Keys(displays: displays)
+        let hotkey = InputHotkey(displays: displays)
+        let settings = SettingsWindow(keys: keys, displays: displays, hotkey: hotkey)
         (_displays, _keys, self.settings) = (State(initialValue: displays), State(initialValue: keys), settings)
         // MenuBarExtra has no right-click menu, so catch right-clicks on our status item's window.
         NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
@@ -161,6 +163,7 @@ final class Monitor: Identifiable {
         key = "\(CGDisplayVendorNumber(id))-\(CGDisplayModelNumber(id))-\(CGDisplaySerialNumber(id))"
         let profilesKey = "profiles.\(key)"
         let defaults = UserDefaults.standard
+        inputPair = defaults.array(forKey: "inputPair.\(key)") as? [Int] ?? []
         let data = defaults.data(forKey: profilesKey) ?? legacyProfilesKey.flatMap { defaults.data(forKey: $0) }
         profiles = data.flatMap { try? JSONDecoder().decode([Profile].self, from: $0) } ?? []
         if defaults.data(forKey: profilesKey) == nil, let data { defaults.set(data, forKey: profilesKey) }
@@ -205,6 +208,10 @@ final class Monitor: Identifiable {
                         self.maxes.merge(maxes) { _, latest in latest }
                         self.responded = true
                         self.readFailures = 0
+                        // The monitor answered again. If it reports the input we switched to,
+                        // the picture is on the other side and stays that way; otherwise it is
+                        // back on this Mac's input.
+                        self.switchedAwayTo = self.switchedAwayTo == self.input ? self.switchedAwayTo : nil
                     } else {
                         self.readFailures += 1
                         // Do not turn a previously healthy monitor into "unsupported"
@@ -249,6 +256,50 @@ final class Monitor: Identifiable {
 
     func options(_ code: VCP, fallback: [Int]) -> [Int] {
         supported?[code.rawValue].flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+    }
+
+    // The two input sources the shortcut toggles between, picked from the ones the monitor reports.
+    var inputPair: [Int] {
+        didSet { UserDefaults.standard.set(inputPair, forKey: "inputPair.\(key)") }
+    }
+
+    // The pair to use: the stored one when it is still valid, otherwise the current input and one
+    // other of the ones the monitor reports.
+    var pairedInputs: [Int] {
+        if inputPair.count == 2 { return inputPair }
+        let inputs = options(.input, fallback: [])
+        guard inputs.count >= 2 else { return [] }
+        if let current = input, inputs.contains(current), let other = inputs.first(where: { $0 != current }) {
+            return [current, other]
+        }
+        return [inputs[0], inputs[1]]
+    }
+
+    func setInputPair(_ index: Int, _ value: Int) {
+        var pair = pairedInputs.count == 2 ? pairedInputs : [value, value]
+        if index == 0 { pair[0] = value } else { pair[1] = value }
+        // The two sides must differ, or there would be nothing to switch to.
+        guard pair[0] != pair[1] else { return }
+        inputPair = pair
+    }
+
+    // Which of the paired inputs to switch to: the one that isn't showing now.
+    static func toggleTarget(current: Int?, pair: [Int]) -> Int? { DDC.toggleTarget(current: current, pair: pair) }
+
+    static func inputName(_ value: Int) -> String { inputNames[value] ?? String(format: "0x%02X", value) }
+
+    // Switching the monitor to another input can take this Mac's DDC channel with it, so remember
+    // where it was sent; the panel can then explain how to get the picture back.
+    private(set) var switchedAwayTo: Int?
+
+    func switchInput(to target: Int) {
+        guard let ddc else { return }
+        switchedAwayTo = target
+        ddc.set(.input, target)
+        values[.input] = target
+        // Read the input back: the monitor either reports the new input, or the DDC channel is
+        // gone because the video link went with it.
+        refresh(after: 1)
     }
 
     // Changing mode/preset makes the monitor load that preset's own brightness, colour, etc.
@@ -378,6 +429,14 @@ struct MonitorSection: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(monitor.name, systemImage: "display")
                 .font(.headline)
+
+            // The picture moved to another input, so this Mac may have no screen at all.
+            if let away = monitor.switchedAwayTo {
+                Label("画面已切到 \(Monitor.inputName(away))，这台 Mac 现在看不到画面。请用显示器的实体按键切回，或在显示器的「输入源」里开启「自动选择」。",
+                      systemImage: "display.trianglebadge.exclamationmark")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            }
 
             if monitor.ddc == nil {
                 hdrRow

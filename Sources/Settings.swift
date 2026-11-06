@@ -7,9 +7,15 @@ import ServiceManagement
 // and has to come to the front even though DisplayDial has no Dock icon. Closing it doesn't quit the app.
 final class SettingsWindow: NSObject {
     let keys: Keys
+    let displays: Displays
+    let hotkey: InputHotkey
     private var window: NSWindow?
 
-    init(keys: Keys) { self.keys = keys }
+    init(keys: Keys, displays: Displays, hotkey: InputHotkey) {
+        self.keys = keys
+        self.displays = displays
+        self.hotkey = hotkey
+    }
 
     @objc func open() { show() }
 
@@ -20,7 +26,7 @@ final class SettingsWindow: NSObject {
             window.isReleasedWhenClosed = false
             self.window = window
         }
-        window.contentViewController = NSHostingController(rootView: SettingsView(keys: keys, highlightKeys: highlightKeys))
+        window.contentViewController = NSHostingController(rootView: SettingsView(keys: keys, displays: displays, hotkey: hotkey, highlightKeys: highlightKeys))
         window.center()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
@@ -37,6 +43,8 @@ private let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] 
 
 struct SettingsView: View {
     let keys: Keys
+    let displays: Displays
+    let hotkey: InputHotkey
     let highlightKeys: Bool
     @State private var launchAtLogin = SMAppService.mainApp.status == .enabled
     @AppStorage("keys.brightness") private var brightnessTarget = "pointer"
@@ -44,9 +52,17 @@ struct SettingsView: View {
     @AppStorage("keys.speakers") private var speakers = ""
     @AppStorage("keys.osd") private var indicator = true
     @State private var explaining = false
+    @State private var explainingHotkey = false
     @State private var turnedOff = false
     @State private var updateStatus: String?
     private let otherAppRunning = NSWorkspace.shared.runningApplications.contains { otherMonitorApps.contains($0.bundleIdentifier ?? "") }
+
+    // Without a built-in display, switching the monitor away leaves this Mac with no picture at all.
+    private var hasBuiltInDisplay: Bool {
+        var ids = [CGDirectDisplayID](repeating: 0, count: 16), count: UInt32 = 0
+        CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count)
+        return ids.prefix(Int(count)).contains { CGDisplayIsBuiltin($0) != 0 }
+    }
 
     var body: some View {
         Form {
@@ -110,6 +126,58 @@ struct SettingsView: View {
                 }
             }
 
+            Section("输入源切换") {
+                Toggle("用快捷键在两个输入源之间切换", isOn: Binding(
+                    get: { hotkey.enabled },
+                    set: { on in
+                        if on { explainingHotkey = true } else { hotkey.enabled = false }
+                    }))
+
+                if hotkey.enabled {
+                    HStack {
+                        Text("快捷键")
+                        HotkeyRecorder(keyCode: Binding(get: { hotkey.keyCode }, set: { hotkey.keyCode = $0 }),
+                                       modifiers: Binding(get: { hotkey.modifiers }, set: { hotkey.modifiers = $0 }),
+                                       onEditing: { editing in editing ? hotkey.suspend() : hotkey.resume() })
+                            .frame(width: 110, height: 22)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.secondary.opacity(0.12)))
+                        Text("点一下，然后按下想用的组合键").font(.caption).foregroundStyle(.secondary)
+                    }
+                    if hotkey.conflict {
+                        Label("这个组合键已被别的应用占用，请换一个。", systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout).foregroundStyle(.orange)
+                    } else if hotkey.unavailable {
+                        Label("系统没能注册这个组合键，请换一个。", systemImage: "exclamationmark.triangle.fill")
+                            .font(.callout).foregroundStyle(.orange)
+                    }
+                    if let monitor = displays.selected {
+                        let inputs = monitor.options(.input, fallback: [])
+                        if inputs.count >= 2 {
+                            let pair = monitor.pairedInputs
+                            Picker("切换到", selection: Binding(get: { pair.first ?? -1 }, set: { monitor.setInputPair(0, $0) })) {
+                                ForEach(inputs.filter { pair.count == 2 ? $0 != pair[1] : true }, id: \.self) {
+                                    Text(Monitor.inputName($0)).tag($0)
+                                }
+                            }
+                            Picker("和", selection: Binding(get: { pair.count == 2 ? pair[1] : -1 }, set: { monitor.setInputPair(1, $0) })) {
+                                ForEach(inputs.filter { pair.count == 2 ? $0 != pair[0] : true }, id: \.self) {
+                                    Text(Monitor.inputName($0)).tag($0)
+                                }
+                            }
+                        } else {
+                            Label("这块显示器没有上报可切换的输入源。", systemImage: "info.circle")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+                    Toggle("切换前先确认", isOn: Binding(get: { hotkey.confirm }, set: { hotkey.confirm = $0 }))
+                    if !hasBuiltInDisplay {
+                        Label("这台 Mac 没有内置屏幕。切走后你会暂时看不到画面，需要用显示器的按键切回，或在显示器的「输入源」里开启「自动选择」。",
+                              systemImage: "exclamationmark.triangle")
+                            .font(.callout).foregroundStyle(.secondary)
+                    }
+                }
+            }
+
             Section("关于") {
                 LabeledContent("版本", value: version)
                 Link("DisplayDial GitHub 项目", destination: URL(string: "https://github.com/Grab-Connected-Tech/DisplayDial")!)
@@ -123,6 +191,32 @@ struct SettingsView: View {
         .frame(width: 480)
         .fixedSize(horizontal: false, vertical: true)
         .sheet(isPresented: $explaining) { explanation }
+        .sheet(isPresented: $explainingHotkey) { hotkeyExplanation }
+    }
+
+    private var hotkeyExplanation: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("用快捷键切换输入源").font(.headline)
+            Text("按下快捷键后，显示器会切到另一个输入源。")
+            if !hasBuiltInDisplay {
+                Text("这台 Mac 没有内置屏幕，切走后你会暂时看不到画面。请用显示器自己的按键切回，或者在显示器的「输入源」里开启「自动选择」。")
+            }
+            Text("DisplayDial 用系统注册这个快捷键，不会监听你输入的文字。")
+            Text("这个组合键会被 DisplayDial 独占，别的应用不会再收到它。")
+            HStack {
+                Spacer()
+                Button("暂不开启") { explainingHotkey = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("继续") {
+                    explainingHotkey = false
+                    hotkey.enabled = true
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(20)
+        .frame(width: 420)
     }
 
     private var explanation: some View {
