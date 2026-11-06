@@ -92,7 +92,7 @@ final class Displays {
         // Opening the menu must not replace an in-use DDC handle with a fresh one:
         // an older refresh task could still be reading from that same physical monitor.
         if !rebind, external.count == monitors.count,
-           zip(external, monitors).allSatisfy({ $0 == $1.id }) { return }
+           zip(external, monitors).allSatisfy({ $0.0 == $0.1.id }) { return }
         let services = DDC.externalDisplays()
 
         var pairs: [(id: CGDirectDisplayID, service: Int, score: Int)] = []
